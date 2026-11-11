@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDF Compressor Pro — Unlimited Local PDF Compression</title>
+  <link rel="stylesheet" href="./style.css" />
+  <!-- PDF.js & pdf-lib for 100% in-browser serverless execution (GitHub Pages compatible) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo-group">
+        <div class="logo-icon">
+          <svg class="icon icon-md" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="12" y1="18" x2="12" y2="12"></line>
+            <polyline points="9 15 12 18 15 15"></polyline>
+          </svg>
+        </div>
+        <div>
+          <h1>PDF Compressor Pro</h1>
+          <p class="subtitle">Unlimited File Size • Target Size Solver • Color / Grayscale / B&amp;W</p>
+        </div>
+      </div>
+      <div class="badges">
+        <span class="badge">
+          <svg class="icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18.178 8c5.096 0 5.096 8 0 8-5.095 0-7.133-8-12.739-8-4.585 0-4.585 8 0 8 5.606 0 7.644-8 12.74-8z"></path>
+          </svg>
+          No Size Limit
+        </span>
+        <span class="badge">
+          <svg class="icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+          100% Local Processing
+        </span>
+      </div>
+    </header>
+
+    <!-- Upload Dropzone -->
+    <section id="uploadSection" class="card upload-card">
+      <input type="file" id="fileInput" accept=".pdf,application/pdf" hidden />
+      <div id="dropzone" class="dropzone">
+        <div class="dropzone-icon">
+          <svg class="icon icon-xl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+        </div>
+        <h2>Drop your PDF file here or click to browse</h2>
+        <p>Supports PDF files of any size (10 MB, 500 MB, 2 GB+) — processed directly on your device</p>
+        <button type="button" class="btn btn-primary" id="selectFileBtn">
+          <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+          </svg>
+          Select PDF File
+        </button>
+      </div>
+
+      <!-- Upload Progress -->
+      <div id="uploadProgressBox" class="progress-box hidden">
+        <div class="progress-info">
+          <span id="uploadStatusText">Opening PDF...</span>
+          <span id="uploadPercentText">0%</span>
+        </div>
+        <div class="progress-bar-track">
+          <div id="uploadProgressBar" class="progress-bar-fill"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Workspace (shown after file upload) -->
+    <main id="workspaceSection" class="workspace hidden">
+      <!-- Left Column: File Info + Scrollable Compression Settings -->
+      <div class="settings-column">
+        <!-- Active File Card -->
+        <div class="card file-summary-card">
+          <div class="file-summary-header">
+            <div class="file-title-wrap">
+              <span class="file-badge">
+                <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                </svg>
+              </span>
+              <div>
+                <h3 id="fileNameLabel" class="file-name">document.pdf</h3>
+                <p id="fileMetaLabel" class="file-meta">0 MB • 0 pages</p>
+              </div>
+            </div>
+            <button type="button" id="changeFileBtn" class="btn btn-ghost btn-sm" title="Select another PDF">
+              <svg class="icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="1 4 1 10 7 10"></polyline>
+                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+              </svg>
+              Change File
+            </button>
+          </div>
+        </div>
+
+        <!-- Settings Card (Fixed height with internal scroll area) -->
+        <div class="card settings-card">
+          <div class="settings-card-header">
+            <h3 class="section-title">
+              <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="4" y1="21" x2="4" y2="14"></line>
+                <line x1="4" y1="10" x2="4" y2="3"></line>
+                <line x1="12" y1="21" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12" y2="3"></line>
+                <line x1="20" y1="21" x2="20" y2="16"></line>
+                <line x1="20" y1="12" x2="20" y2="3"></line>
+                <line x1="1" y1="14" x2="7" y2="14"></line>
+                <line x1="9" y1="8" x2="15" y2="8"></line>
+                <line x1="17" y1="16" x2="23" y2="16"></line>
+              </svg>
+              Compression Settings
+            </h3>
+          </div>
+
+          <div class="settings-scroll-area">
+            <!-- 1. Target Size vs Manual Quality Tabs -->
+            <div class="control-group">
+              <label class="group-label">Compression Mode</label>
+              <div class="segmented-control" id="sizingModeTabs">
+                <button type="button" class="seg-btn active" data-mode="target">
+                  <svg class="icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <circle cx="12" cy="12" r="6"></circle>
+                    <circle cx="12" cy="12" r="2"></circle>
+                  </svg>
+                  Target File Size
+                </button>
+                <button type="button" class="seg-btn" data-mode="preset">
+                  <svg class="icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                  </svg>
+                  Quality &amp; DPI
+                </button>
+              </div>
+            </div>
+
+            <!-- Target Size Panel -->
+            <div id="targetSizePanel" class="sub-panel">
+              <div class="target-input-row">
+                <div class="target-field">
+                  <label for="targetSizeInput">Desired Max File Size</label>
+                  <div class="input-with-unit">
+                    <input type="number" id="targetSizeInput" min="0.05" step="0.1" value="2.0" />
+                    <select id="targetUnitSelect">
+                      <option value="MB" selected>MB</option>
+                      <option value="KB">KB</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="target-ratio-box">
+                  <span>Target of original:</span>
+                  <strong id="targetRatioHint">~50%</strong>
+                </div>
+              </div>
+
+              <div class="slider-wrap">
+                <input type="range" id="targetPercentSlider" min="5" max="95" value="50" />
+                <div class="slider-labels">
+                  <span>Max compression (5%)</span>
+                  <span>Balanced (50%)</span>
+                  <span>Light (95%)</span>
+                </div>
+              </div>
+
+              <div class="quick-chips" id="quickTargetChips">
+                <button type="button" class="chip" data-ratio="0.25">-75% size</button>
+                <button type="button" class="chip active" data-ratio="0.5">-50% size</button>
+                <button type="button" class="chip" data-ratio="0.7">-30% size</button>
+                <button type="button" class="chip" data-mb="1">Max 1 MB</button>
+                <button type="button" class="chip" data-mb="2">Max 2 MB</button>
+                <button type="button" class="chip" data-mb="5">Max 5 MB</button>
+                <button type="button" class="chip" data-mb="10">Max 10 MB</button>
+              </div>
+            </div>
+
+            <!-- Preset / Manual Quality Panel -->
+            <div id="presetQualityPanel" class="sub-panel hidden">
+              <div class="preset-grid" id="qualityPresets">
+                <button type="button" class="preset-card" data-q="85" data-dpi="200">
+                  <strong>Light</strong>
+                  <span>85% • 200 DPI</span>
+                </button>
+                <button type="button" class="preset-card active" data-q="70" data-dpi="144">
+                  <strong>Balanced</strong>
+                  <span>70% • 144 DPI</span>
+                </button>
+                <button type="button" class="preset-card" data-q="50" data-dpi="100">
+                  <strong>Strong</strong>
+                  <span>50% • 100 DPI</span>
+                </button>
+                <button type="button" class="preset-card" data-q="30" data-dpi="72">
+                  <strong>Extreme</strong>
+                  <span>30% • 72 DPI</span>
+                </button>
+              </div>
+
+              <div class="slider-group">
+                <div class="slider-header">
+                  <label for="qualitySlider">Image Quality (JPEG)</label>
+                  <span id="qualityValueLabel" class="val-pill">70%</span>
+                </div>
+                <input type="range" id="qualitySlider" min="10" max="95" value="70" />
+              </div>
+
+              <div class="slider-group">
+                <div class="slider-header">
+                  <label for="dpiSlider">Resolution (DPI)</label>
+                  <span id="dpiValueLabel" class="val-pill">144 DPI</span>
+                </div>
+                <input type="range" id="dpiSlider" min="36" max="300" value="144" />
+              </div>
+            </div>
+
+            <hr class="divider" />
+
+            <!-- 2. Color Mode Selection -->
+            <div class="control-group">
+              <label class="group-label">Color Mode</label>
+              <div class="color-mode-grid" id="colorModeGroup">
+                <button type="button" class="color-card active" data-color="color">
+                  <span class="color-swatch swatch-color"></span>
+                  <div>
+                    <strong>Color (RGB)</strong>
+                    <small>Preserve original colors</small>
+                  </div>
+                </button>
+                <button type="button" class="color-card" data-color="grayscale">
+                  <span class="color-swatch swatch-gray"></span>
+                  <div>
+                    <strong>Grayscale</strong>
+                    <small>Smooth 8-bit gray tones</small>
+                  </div>
+                </button>
+                <button type="button" class="color-card" data-color="bw">
+                  <span class="color-swatch swatch-bw"></span>
+                  <div>
+                    <strong>Black &amp; White</strong>
+                    <small>High-contrast document scan</small>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <!-- B&W Threshold Slider (only visible when B&W is chosen) -->
+            <div id="bwThresholdBox" class="slider-group bw-sub-box hidden">
+              <div class="slider-header">
+                <label for="bwThresholdSlider">B&amp;W Contrast Threshold</label>
+                <span id="bwThresholdLabel" class="val-pill">180</span>
+              </div>
+              <input type="range" id="bwThresholdSlider" min="80" max="235" value="180" />
+              <div class="slider-labels">
+                <span>Lighter (less noise)</span>
+                <span>Darker (bolder text)</span>
+              </div>
+            </div>
+
+            <hr class="divider" />
+
+            <!-- 3. Compression Method -->
+            <div class="control-group">
+              <label class="group-label" for="methodSelect">Processing Engine</label>
+              <select id="methodSelect" class="select-input">
+                <option value="auto" selected>Auto (Smart compression + Target size solver)</option>
+                <option value="smart">Smart Only (Keep selectable text &amp; vectors)</option>
+                <option value="rasterize">Full Rasterize (Convert pages to compressed images)</option>
+              </select>
+            </div>
+
+            <!-- 4. Extra Checkboxes -->
+            <div class="checkbox-list">
+              <label class="checkbox-item">
+                <input type="checkbox" id="stripMetadataCheck" checked />
+                <span>Strip metadata, EXIF &amp; embedded XML packets</span>
+              </label>
+              <label class="checkbox-item">
+                <input type="checkbox" id="stripAnnotationsCheck" />
+                <span>Remove comments &amp; annotations</span>
+              </label>
+              <label class="checkbox-item">
+                <input type="checkbox" id="preserveTocCheck" checked />
+                <span>Preserve bookmarks &amp; table of contents</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Fixed Footer inside Settings Card -->
+          <div class="settings-card-footer">
+            <button type="button" id="compressBtn" class="btn btn-primary btn-lg btn-block">
+              <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+              </svg>
+              <span>Compress PDF</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Results & Visual Comparison -->
+      <div class="results-column">
+        <!-- Compression Result Banner -->
+        <div id="resultCard" class="card result-card hidden">
+          <div class="result-top">
+            <div class="result-sizes">
+              <div class="size-block">
+                <span class="size-caption">Original</span>
+                <strong id="origSizeStat" class="size-val old">10.0 MB</strong>
+              </div>
+              <div class="size-arrow">
+                <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                  <polyline points="12 5 19 12 12 19"></polyline>
+                </svg>
+              </div>
+              <div class="size-block">
+                <span class="size-caption">Compressed</span>
+                <strong id="newSizeStat" class="size-val new">2.1 MB</strong>
+              </div>
+              <div class="savings-pill" id="savingsBadge">-79%</div>
+            </div>
+
+            <a id="downloadBtn" href="#" class="btn btn-success btn-lg" download>
+              <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              Download PDF
+            </a>
+          </div>
+
+          <div class="result-details" id="resultDetailsText">
+            Saved: 7.9 MB • Engine: Smart • 144 DPI • Quality: 70%
+          </div>
+        </div>
+
+        <!-- Visual Page Preview Card -->
+        <div class="card preview-card">
+          <div class="preview-header">
+            <h3 class="section-title-inline">
+              <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="12" y1="3" x2="12" y2="21"></line>
+              </svg>
+              Side-by-Side Page Comparison
+            </h3>
+            <div class="pagination-controls">
+              <button type="button" id="prevPageBtn" class="btn btn-ghost btn-icon" disabled title="Previous page">
+                <svg class="icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="15 18 9 12 15 6"></polyline>
+                </svg>
+              </button>
+              <span id="pageIndicator">Page 1 of 1</span>
+              <button type="button" id="nextPageBtn" class="btn btn-ghost btn-icon" disabled title="Next page">
+                <svg class="icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="preview-comparison-grid">
+            <div class="preview-pane">
+              <div class="pane-label">Original</div>
+              <div class="img-container">
+                <img id="origPreviewImg" alt="Original page preview" />
+              </div>
+            </div>
+            <div class="preview-pane">
+              <div class="pane-label" id="compressedPaneTitle">Compressed (click "Compress PDF")</div>
+              <div class="img-container" id="compressedPreviewWrap">
+                <div id="previewPlaceholder" class="preview-placeholder">
+                  <svg class="icon icon-lg muted-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                  </svg>
+                  <p>Click <strong>Compress PDF</strong> to preview and compare the output quality</p>
+                </div>
+                <img id="compPreviewImg" class="hidden" alt="Compressed page preview" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Toast / Error notification -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
