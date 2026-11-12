@@ -24,8 +24,17 @@ from compressor import (
 app = FastAPI(
     title="PDF Compressor Pro",
     description="Unlimited local PDF compressor and merger",
-    version="1.1.0",
+    version="2.0.0",
 )
+
+
+@app.middleware("http")
+async def disable_static_cache(request, call_next):
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 # Storage directory for active jobs
 STORAGE_DIR = Path(tempfile.gettempdir()) / "pdf_compressor_jobs"

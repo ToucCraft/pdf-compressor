@@ -1,4 +1,4 @@
-// Configure PDF.js worker for serverless / GitHub Pages mode
+// Configure PDF.js worker
 if (window.pdfjsLib) {
   window.pdfjsLib.GlobalWorkerOptions.workerSrc =
     "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -6,15 +6,12 @@ if (window.pdfjsLib) {
 
 // Application State
 const state = {
-  mode: "browser",        // "backend" | "browser" (auto-detected)
-  jobId: null,
-  files: [],              // [{ id, filename, size, pages_count, file?, objectUrl?, pdfDocProxy? }]
+  files: [],              // [{ id, file, filename, size, pages_count, pdfDocProxy }]
   compressedPdfProxy: null,
   compressedBlobUrl: null,
   filename: "",
   originalSize: 0,
   pagesCount: 1,
-  imagesCount: 0,
   currentPage: 0,
   hasCompressed: false,
   sizingMode: "target",   // "target" | "preset" | "merge_only"
@@ -49,7 +46,6 @@ const dropzone = document.getElementById("dropzone");
 const fileInput = document.getElementById("fileInput");
 const addMoreFileInput = document.getElementById("addMoreFileInput");
 const selectFileBtn = document.getElementById("selectFileBtn");
-const addPdfBtn = document.getElementById("addPdfBtn");
 const uploadProgressBox = document.getElementById("uploadProgressBox");
 const uploadStatusText = document.getElementById("uploadStatusText");
 const uploadPercentText = document.getElementById("uploadPercentText");
@@ -129,17 +125,13 @@ function showToast(msg) {
 
 function cleanupSingleBrowserFile(entry) {
   if (!entry) return;
-  if (entry.objectUrl) {
-    URL.revokeObjectURL(entry.objectUrl);
-    entry.objectUrl = null;
-  }
   if (entry.pdfDocProxy) {
     entry.pdfDocProxy.destroy().catch(() => {});
     entry.pdfDocProxy = null;
   }
 }
 
-function cleanupBrowserResources() {
+function cleanupAllResources() {
   for (const f of state.files) {
     cleanupSingleBrowserFile(f);
   }
@@ -202,11 +194,15 @@ function updateRatioFromTargetInput() {
 
 // Upload & Add File Events
 selectFileBtn.addEventListener("click", (e) => {
+  // Stop bubbling so dropzone click doesn't double-fire
   e.stopPropagation();
-  fileInput.click();
 });
 
-dropzone.addEventListener("click", () => fileInput.click());
+dropzone.addEventListener("click", (e) => {
+  if (e.target.closest("#selectFileBtn")) return;
+  fileInput.value = "";
+  fileInput.click();
+});
 
 dropzone.addEventListener("dragover", (e) => {
   e.preventDefault();
@@ -225,160 +221,95 @@ dropzone.addEventListener("drop", (e) => {
   }
 });
 
-fileInput.addEventListener("change", () => {
-  if (fileInput.files && fileInput.files.length > 0) {
-    handleFilesSelection(Array.from(fileInput.files), false);
+// Also allow dropping additional PDFs directly onto the workspace to merge them
+workspaceSection.addEventListener("dragover", (e) => {
+  e.preventDefault();
+});
+
+workspaceSection.addEventListener("drop", (e) => {
+  e.preventDefault();
+  if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    handleFilesSelection(Array.from(e.dataTransfer.files), true);
   }
 });
 
-addPdfBtn.addEventListener("click", () => {
-  addMoreFileInput.value = "";
-  addMoreFileInput.click();
+fileInput.addEventListener("change", () => {
+  if (fileInput.files && fileInput.files.length > 0) {
+    const selected = Array.from(fileInput.files);
+    fileInput.value = "";
+    handleFilesSelection(selected, false);
+  }
 });
 
 addMoreFileInput.addEventListener("change", () => {
   if (addMoreFileInput.files && addMoreFileInput.files.length > 0) {
-    handleFilesSelection(Array.from(addMoreFileInput.files), true);
+    const selected = Array.from(addMoreFileInput.files);
+    addMoreFileInput.value = "";
+    handleFilesSelection(selected, true);
   }
 });
 
 changeFileBtn.addEventListener("click", () => {
-  if (state.mode === "backend" && state.jobId) {
-    fetch(`./api/job/${state.jobId}`, { method: "DELETE" }).catch(() => {});
-  }
-  cleanupBrowserResources();
-  state.jobId = null;
+  cleanupAllResources();
   fileInput.value = "";
+  addMoreFileInput.value = "";
   workspaceSection.classList.add("hidden");
   uploadSection.classList.remove("hidden");
   uploadProgressBox.classList.add("hidden");
 });
 
 async function handleFilesSelection(fileArray, append = false) {
-  const pdfFiles = fileArray.filter((f) => f.name.toLowerCase().endsWith(".pdf"));
+  const pdfFiles = fileArray.filter(
+    (f) => f.name.toLowerCase().endsWith(".pdf") || f.type === "application/pdf"
+  );
   if (pdfFiles.length === 0) {
     showToast("Please select valid PDF file(s) (.pdf)");
     return;
   }
 
   if (!append) {
-    cleanupBrowserResources();
-    state.jobId = null;
+    cleanupAllResources();
     uploadProgressBox.classList.remove("hidden");
     uploadProgressBar.style.width = "10%";
     uploadPercentText.textContent = "10%";
-    uploadStatusText.textContent = `Loading ${pdfFiles.length} PDF file(s)...`;
-  } else {
-    addPdfBtn.disabled = true;
+    uploadStatusText.textContent = `Opening ${pdfFiles.length} PDF file(s)...`;
   }
 
-  const isLocalServer =
-    window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-
-  try {
-    if (isLocalServer && (!append || state.mode === "backend")) {
-      let lastData = null;
-      let backendOk = true;
-      for (let i = 0; i < pdfFiles.length; i++) {
-        const resData = await tryBackendUpload(pdfFiles[i], state.jobId);
-        if (!resData) {
-          backendOk = false;
-          break;
-        }
-        state.jobId = resData.job_id;
-        lastData = resData;
-      }
-      if (backendOk && lastData) {
-        state.mode = "backend";
-        applyJobStateFromBackend(lastData, !append);
-        return;
-      }
-    }
-
-    // Browser Mode (GitHub Pages / Serverless)
-    state.mode = "browser";
-    await appendFilesInBrowser(pdfFiles, !append);
-  } finally {
-    addPdfBtn.disabled = false;
-  }
-}
-
-function tryBackendUpload(file, existingJobId = null) {
-  return new Promise((resolve) => {
-    const formData = new FormData();
-    formData.append("file", file);
-
-    const url = existingJobId
-      ? `./api/upload?job_id=${encodeURIComponent(existingJobId)}`
-      : "./api/upload";
-
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", url, true);
-
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable && !uploadProgressBox.classList.contains("hidden")) {
-        const pct = Math.round((e.loaded / e.total) * 100);
-        uploadProgressBar.style.width = `${pct}%`;
-        uploadPercentText.textContent = `${pct}%`;
-      }
-    };
-
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          resolve(JSON.parse(xhr.responseText));
-          return;
-        } catch (_) {}
-      }
-      resolve(null);
-    };
-
-    xhr.onerror = () => resolve(null);
-    xhr.send(formData);
-  });
-}
-
-async function appendFilesInBrowser(pdfFiles, isInitial) {
   try {
     for (let i = 0; i < pdfFiles.length; i++) {
       const f = pdfFiles[i];
-      if (!uploadProgressBox.classList.contains("hidden")) {
+      if (!append) {
         const pct = Math.round(((i + 0.5) / pdfFiles.length) * 100);
         uploadProgressBar.style.width = `${pct}%`;
         uploadPercentText.textContent = `${pct}%`;
-        uploadStatusText.textContent = `Opening "${f.name}"...`;
+        uploadStatusText.textContent = `Reading "${f.name}" (${i + 1}/${pdfFiles.length})...`;
       }
 
-      const objectUrl = URL.createObjectURL(f);
-      const pdfDocProxy = await window.pdfjsLib.getDocument({
-        url: objectUrl,
-        disableAutoFetch: true,
-        disableStream: false,
-      }).promise;
+      const arrayBuf = await f.arrayBuffer();
+      const uint8 = new Uint8Array(arrayBuf);
+      const pdfDocProxy = await window.pdfjsLib.getDocument({ data: uint8 }).promise;
 
       state.files.push({
-        id: `f_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        id: `f_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 7)}`,
         file: f,
         filename: f.name,
         size: f.size,
         pages_count: pdfDocProxy.numPages,
-        objectUrl,
         pdfDocProxy,
       });
     }
 
-    state.jobId = "browser-session";
-    recalculateBrowserTotals(isInitial);
+    recalculateTotals(!append);
   } catch (err) {
     showToast(`Failed to open PDF: ${err.message || err}`);
     uploadProgressBox.classList.add("hidden");
   }
 }
 
-function recalculateBrowserTotals(resetTargetRatio = false) {
+function recalculateTotals(resetTargetRatio = false) {
   state.originalSize = state.files.reduce((acc, f) => acc + f.size, 0);
   state.pagesCount = Math.max(1, state.files.reduce((acc, f) => acc + f.pages_count, 0));
-  state.imagesCount = state.pagesCount;
+
   if (state.files.length === 1) {
     state.filename = state.files[0].filename;
   } else if (state.files.length > 1) {
@@ -390,17 +321,6 @@ function recalculateBrowserTotals(resetTargetRatio = false) {
   refreshWorkspaceUI(resetTargetRatio);
 }
 
-function applyJobStateFromBackend(data, resetTargetRatio = false) {
-  state.jobId = data.job_id;
-  state.filename = data.filename;
-  state.originalSize = data.original_size;
-  state.pagesCount = data.pages_count;
-  state.imagesCount = data.images_count;
-  state.files = data.files || [];
-
-  refreshWorkspaceUI(resetTargetRatio);
-}
-
 function refreshWorkspaceUI(resetTargetRatio = false) {
   if (state.currentPage >= state.pagesCount) {
     state.currentPage = Math.max(0, state.pagesCount - 1);
@@ -408,11 +328,11 @@ function refreshWorkspaceUI(resetTargetRatio = false) {
   state.hasCompressed = false;
 
   if (state.files.length > 1) {
-    fileNameLabel.textContent = `${state.files.length} PDF files to merge`;
+    fileNameLabel.textContent = `${state.files.length} PDF files in Merge Queue`;
     fileNameLabel.title = state.files.map((f) => f.filename).join(" + ");
-  } else {
-    fileNameLabel.textContent = state.filename;
-    fileNameLabel.title = state.filename;
+  } else if (state.files.length === 1) {
+    fileNameLabel.textContent = state.files[0].filename;
+    fileNameLabel.title = state.files[0].filename;
   }
   fileMetaLabel.textContent = `${formatBytes(state.originalSize)} • ${state.pagesCount} pages total`;
 
@@ -443,7 +363,7 @@ function refreshWorkspaceUI(resetTargetRatio = false) {
 }
 
 function renderFileQueueList() {
-  if (state.files.length <= 1) {
+  if (state.files.length === 0) {
     fileQueueList.classList.add("hidden");
     fileQueueList.innerHTML = "";
     return;
@@ -458,7 +378,9 @@ function renderFileQueueList() {
           <span class="queue-index">${idx + 1}</span>
           <div class="queue-info">
             <div class="queue-name" title="${f.filename}">${f.filename}</div>
-            <div class="queue-sub">${formatBytes(f.size)} • ${f.pages_count} p.</div>
+            <div class="queue-sub">${formatBytes(f.size)} • ${f.pages_count} page${
+        f.pages_count === 1 ? "" : "s"
+      }</div>
           </div>
         </div>
         <div class="queue-actions">
@@ -476,7 +398,9 @@ function renderFileQueueList() {
               <polyline points="6 9 12 15 18 9"></polyline>
             </svg>
           </button>
-          <button type="button" class="queue-btn danger" data-action="remove" data-idx="${idx}" title="Remove file">
+          <button type="button" class="queue-btn danger" data-action="remove" data-idx="${idx}" ${
+        state.files.length <= 1 ? "disabled" : ""
+      } title="Remove file">
             <svg class="icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <line x1="18" y1="6" x2="6" y2="18"></line>
               <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -489,7 +413,7 @@ function renderFileQueueList() {
     .join("");
 }
 
-fileQueueList.addEventListener("click", async (e) => {
+fileQueueList.addEventListener("click", (e) => {
   const btn = e.target.closest(".queue-btn");
   if (!btn || btn.disabled) return;
 
@@ -508,28 +432,10 @@ fileQueueList.addEventListener("click", async (e) => {
   } else if (action === "remove") {
     if (state.files.length <= 1) return;
     const [removed] = state.files.splice(idx, 1);
-    if (state.mode === "browser") {
-      cleanupSingleBrowserFile(removed);
-    }
+    cleanupSingleBrowserFile(removed);
   }
 
-  if (state.mode === "backend") {
-    try {
-      const res = await fetch(`./api/queue/${state.jobId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ file_ids: state.files.map((f) => f.id) }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        applyJobStateFromBackend(data, false);
-      }
-    } catch (err) {
-      showToast("Failed to update queue order");
-    }
-  } else {
-    recalculateBrowserTotals(false);
-  }
+  recalculateTotals(false);
 });
 
 // Sizing / Operation Mode Tabs
@@ -623,10 +529,10 @@ bwThresholdSlider.addEventListener("input", () => {
 });
 
 // ============================================================================
-// In-Browser PDF Merge & Compression Engine (PDF.js + Canvas + pdf-lib)
+// PDF Merge & Compression Engine (PDF.js + Canvas + pdf-lib)
 // ============================================================================
 
-function resolveGlobalPageInBrowser(globalPageIndex0Based) {
+function resolveGlobalPage(globalPageIndex0Based) {
   let offset = 0;
   for (const entry of state.files) {
     if (globalPageIndex0Based < offset + entry.pages_count) {
@@ -680,7 +586,7 @@ function applyCanvasColorMode(ctx, width, height, colorMode, bwThreshold) {
 }
 
 async function renderGlobalPageToJpegBytes(globalPageIdx0Based, dpi, quality, colorMode, bwThreshold) {
-  const { entry, localPage1Based } = resolveGlobalPageInBrowser(globalPageIdx0Based);
+  const { entry, localPage1Based } = resolveGlobalPage(globalPageIdx0Based);
   const page = await entry.pdfDocProxy.getPage(localPage1Based);
   const baseViewport = page.getViewport({ scale: 1.0 });
   const scale = Math.max(36, dpi) / 72.0;
@@ -708,7 +614,7 @@ async function renderGlobalPageToJpegBytes(globalPageIdx0Based, dpi, quality, co
   };
 }
 
-async function solveBrowserTargetParams(targetBytes, colorMode, bwThreshold) {
+async function solveTargetParams(targetBytes, colorMode, bwThreshold) {
   const numPages = state.pagesCount;
   const sampleIndices = [];
   if (numPages <= 3) {
@@ -789,10 +695,10 @@ async function mergeOnlyInBrowser(payload) {
   }
 
   const pdfBytes = await outPdf.save({ useObjectStreams: true });
-  return await finalizeBrowserOutput(pdfBytes, t0, "merge_only", "color", 300, 100);
+  return await finalizeOutput(pdfBytes, t0, "merge_only", "color", 300, 100);
 }
 
-async function compressInBrowser(payload) {
+async function processPdfQueue(payload) {
   if (payload.method === "merge_only") {
     return await mergeOnlyInBrowser(payload);
   }
@@ -806,7 +712,7 @@ async function compressInBrowser(payload) {
   if (payload.target_size_kb && payload.target_size_kb > 0) {
     compressBtn.innerHTML = `${ICON_SPINNER}<span>Calculating optimal parameters...</span>`;
     const targetBytes = payload.target_size_kb * 1024;
-    const [optDpi, optQ] = await solveBrowserTargetParams(
+    const [optDpi, optQ] = await solveTargetParams(
       targetBytes,
       payload.color_mode,
       payload.bw_threshold
@@ -848,7 +754,7 @@ async function compressInBrowser(payload) {
   }
 
   const pdfBytes = await outPdf.save({ useObjectStreams: true });
-  return await finalizeBrowserOutput(
+  return await finalizeOutput(
     pdfBytes,
     t0,
     "rasterize",
@@ -858,7 +764,7 @@ async function compressInBrowser(payload) {
   );
 }
 
-async function finalizeBrowserOutput(pdfBytes, t0, methodUsed, colorMode, dpiUsed, qualityUsed) {
+async function finalizeOutput(pdfBytes, t0, methodUsed, colorMode, dpiUsed, qualityUsed) {
   const compressedSize = pdfBytes.byteLength;
 
   if (state.compressedBlobUrl) {
@@ -870,8 +776,11 @@ async function finalizeBrowserOutput(pdfBytes, t0, methodUsed, colorMode, dpiUse
 
   const blob = new Blob([pdfBytes], { type: "application/pdf" });
   state.compressedBlobUrl = URL.createObjectURL(blob);
+
+  // Pass copied Uint8Array to PDF.js for instant, reliable preview rendering
+  const previewCopy = new Uint8Array(pdfBytes);
   state.compressedPdfProxy = await window.pdfjsLib.getDocument({
-    url: state.compressedBlobUrl,
+    data: previewCopy,
   }).promise;
 
   const elapsedSec = ((performance.now() - t0) / 1000).toFixed(2);
@@ -895,7 +804,7 @@ async function finalizeBrowserOutput(pdfBytes, t0, methodUsed, colorMode, dpiUse
 
 // Execute Compress / Merge
 compressBtn.addEventListener("click", async () => {
-  if (!state.jobId) return;
+  if (state.files.length === 0) return;
 
   compressBtn.disabled = true;
   compressBtn.innerHTML = `${ICON_SPINNER}<span>Processing PDF...</span>`;
@@ -910,7 +819,6 @@ compressBtn.addEventListener("click", async () => {
     state.sizingMode === "merge_only" ? "merge_only" : methodSelect.value;
 
   const payload = {
-    job_id: state.jobId,
     method: chosenMethod,
     color_mode: state.colorMode,
     quality: parseInt(qualitySlider.value, 10),
@@ -923,23 +831,7 @@ compressBtn.addEventListener("click", async () => {
   };
 
   try {
-    let data;
-    if (state.mode === "backend") {
-      const res = await fetch("./api/compress", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.detail || "Processing failed");
-      }
-      data = await res.json();
-    } else {
-      data = await compressInBrowser(payload);
-    }
-
+    const data = await processPdfQueue(payload);
     state.hasCompressed = true;
     renderResultStats(data);
     await loadPreviews();
@@ -996,12 +888,7 @@ function renderResultStats(data) {
     ? `${stem}.pdf`
     : `${stem}_compressed.pdf`;
   downloadBtn.setAttribute("download", downloadFilename);
-
-  if (state.mode === "backend") {
-    downloadBtn.href = `./api/download/${state.jobId}?t=${Date.now()}`;
-  } else {
-    downloadBtn.href = state.compressedBlobUrl;
-  }
+  downloadBtn.href = state.compressedBlobUrl;
 
   compressedPaneTitle.textContent = `Output (${formatBytes(data.compressed_size)})`;
 }
@@ -1029,7 +916,7 @@ function updatePaginationUI() {
   nextPageBtn.disabled = state.currentPage >= state.pagesCount - 1;
 }
 
-async function renderProxyPageToDataUrl(pdfProxy, pageIndex1Based, dpi = 110) {
+async function renderProxyPageToDataUrl(pdfProxy, pageIndex1Based, dpi = 115) {
   const page = await pdfProxy.getPage(pageIndex1Based);
   const viewport = page.getViewport({ scale: dpi / 72.0 });
   const canvas = document.createElement("canvas");
@@ -1043,30 +930,16 @@ async function renderProxyPageToDataUrl(pdfProxy, pageIndex1Based, dpi = 110) {
 }
 
 async function loadPreviews() {
-  if (!state.jobId) return;
+  if (state.files.length === 0) return;
 
-  if (state.mode === "backend") {
-    const ts = Date.now();
+  try {
+    const { entry, localPage1Based } = resolveGlobalPage(state.currentPage);
     origPaneTitle.textContent =
       state.files.length > 1
-        ? `Original (Combined Queue — Page ${state.currentPage + 1})`
-        : "Original";
-    origPreviewImg.src = `./api/preview/${state.jobId}?variant=original&page=${state.currentPage}&t=${ts}`;
+        ? `Original (${entry.filename} — Page ${localPage1Based})`
+        : `Original (Page ${localPage1Based})`;
+    origPreviewImg.src = await renderProxyPageToDataUrl(entry.pdfDocProxy, localPage1Based);
 
-    if (state.hasCompressed) {
-      previewPlaceholder.classList.add("hidden");
-      compPreviewImg.classList.remove("hidden");
-      compPreviewImg.src = `./api/preview/${state.jobId}?variant=compressed&page=${state.currentPage}&t=${ts}`;
-    }
-  } else {
-    if (state.files.length > 0) {
-      const { entry, localPage1Based } = resolveGlobalPageInBrowser(state.currentPage);
-      origPaneTitle.textContent =
-        state.files.length > 1
-          ? `Original (${entry.filename} — p. ${localPage1Based})`
-          : "Original";
-      origPreviewImg.src = await renderProxyPageToDataUrl(entry.pdfDocProxy, localPage1Based);
-    }
     if (state.hasCompressed && state.compressedPdfProxy) {
       previewPlaceholder.classList.add("hidden");
       compPreviewImg.classList.remove("hidden");
@@ -1075,5 +948,7 @@ async function loadPreviews() {
         state.currentPage + 1
       );
     }
+  } catch (err) {
+    console.error("Preview render error:", err);
   }
 }

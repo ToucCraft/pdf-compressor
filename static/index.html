@@ -4,13 +4,17 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PDF Compressor &amp; Merger Pro — Unlimited Local PDF Tool</title>
-  <link rel="stylesheet" href="./style.css" />
-  <!-- PDF.js & pdf-lib for 100% in-browser serverless execution (GitHub Pages compatible) -->
+  <link rel="stylesheet" href="./style.css?v=2.1" />
+  <!-- PDF.js & pdf-lib for 100% in-browser serverless execution -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 </head>
 <body>
   <div class="app-container">
+    <!-- Top-level File Inputs (kept outside hidden sections so native file dialogs always open) -->
+    <input type="file" id="fileInput" class="visually-hidden-input" accept=".pdf,application/pdf" multiple />
+    <input type="file" id="addMoreFileInput" class="visually-hidden-input" accept=".pdf,application/pdf" multiple />
+
     <!-- Header -->
     <header class="header">
       <div class="logo-group">
@@ -55,8 +59,6 @@
 
     <!-- Upload Dropzone -->
     <section id="uploadSection" class="card upload-card">
-      <input type="file" id="fileInput" accept=".pdf,application/pdf" multiple hidden />
-      <input type="file" id="addMoreFileInput" accept=".pdf,application/pdf" multiple hidden />
       <div id="dropzone" class="dropzone">
         <div class="dropzone-icon">
           <svg class="icon icon-xl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -67,13 +69,13 @@
         </div>
         <h2>Drop one or multiple PDF files here, or click to browse</h2>
         <p>Select multiple PDFs to merge them together, or a single PDF to compress — no size limit</p>
-        <button type="button" class="btn btn-primary" id="selectFileBtn">
+        <label for="fileInput" class="btn btn-primary" id="selectFileBtn">
           <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
             <polyline points="14 2 14 8 20 8"></polyline>
           </svg>
           Select PDF File(s)
-        </button>
+        </label>
       </div>
 
       <!-- Upload Progress -->
@@ -108,14 +110,14 @@
               </div>
             </div>
             <div class="file-header-actions">
-              <button type="button" id="addPdfBtn" class="btn btn-primary btn-sm" title="Add another PDF to merge">
+              <label for="addMoreFileInput" id="addPdfBtn" class="btn btn-primary btn-sm" title="Add more PDF files to merge">
                 <svg class="icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                   <line x1="12" y1="5" x2="12" y2="19"></line>
                   <line x1="5" y1="12" x2="19" y2="12"></line>
                 </svg>
                 Add PDF
-              </button>
-              <button type="button" id="changeFileBtn" class="btn btn-ghost btn-icon" title="Clear and start over">
+              </label>
+              <button type="button" id="changeFileBtn" class="btn btn-ghost btn-icon" title="Clear all files and start over">
                 <svg class="icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <polyline points="1 4 1 10 7 10"></polyline>
                   <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
@@ -125,7 +127,7 @@
           </div>
 
           <!-- Reorderable Merge Queue List -->
-          <div id="fileQueueList" class="file-queue-list hidden"></div>
+          <div id="fileQueueList" class="file-queue-list"></div>
         </div>
 
         <!-- Settings Card (Fixed height with internal scroll area) -->
@@ -453,6 +455,6 @@
   <!-- Toast / Error notification -->
   <div id="toast" class="toast hidden"></div>
 
-  <script src="./app.js"></script>
+  <script src="./app.js?v=2.1"></script>
 </body>
 </html>
