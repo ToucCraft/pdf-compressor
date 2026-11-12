@@ -5,11 +5,11 @@ import tempfile
 import time
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 from urllib.parse import quote
 
 import fitz
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -17,13 +17,14 @@ from pydantic import BaseModel
 from compressor import (
     CompressionOptions,
     compress_pdf,
+    merge_pdfs,
     render_page_preview_png,
 )
 
 app = FastAPI(
     title="PDF Compressor Pro",
-    description="Unlimited local PDF compressor",
-    version="1.0.0",
+    description="Unlimited local PDF compressor and merger",
+    version="1.1.0",
 )
 
 # Storage directory for active jobs
@@ -55,7 +56,6 @@ def inspect_pdf(pdf_path: str) -> dict:
     try:
         pages_count = len(doc)
         xrefs = set()
-        # Sample up to first 100 pages for image count so huge PDFs open instantaneously
         for i in range(min(pages_count, 100)):
             for img in doc[i].get_images(full=True):
                 xrefs.add(img[0])
@@ -68,9 +68,48 @@ def inspect_pdf(pdf_path: str) -> dict:
         doc.close()
 
 
+def _rebuild_job_combined_pdf(job: dict):
+    """Rebuild job['input_path'] from job['files'] list in order."""
+    files = job["files"]
+    combined_path = os.path.join(job["job_dir"], "original.pdf")
+    if len(files) == 1:
+        shutil.copyfile(files[0]["path"], combined_path)
+    else:
+        merge_pdfs([f["path"] for f in files], combined_path)
+
+    job["input_path"] = combined_path
+    job["original_size"] = sum(f["size"] for f in files)
+    job["pages_count"] = sum(f["pages_count"] for f in files)
+    job["images_count"] = sum(f["images_count"] for f in files)
+    if len(files) == 1:
+        job["filename"] = files[0]["filename"]
+    else:
+        stem = files[0]["filename"][:-4] if files[0]["filename"].lower().endswith(".pdf") else files[0]["filename"]
+        job["filename"] = f"{stem}_merged_{len(files)}_files.pdf"
+
+
+def _serialize_job_state(job: dict) -> dict:
+    return {
+        "job_id": job["job_id"],
+        "filename": job["filename"],
+        "original_size": job["original_size"],
+        "pages_count": job["pages_count"],
+        "images_count": job["images_count"],
+        "files": [
+            {
+                "id": f["id"],
+                "filename": f["filename"],
+                "size": f["size"],
+                "pages_count": f["pages_count"],
+            }
+            for f in job["files"]
+        ],
+    }
+
+
 class CompressRequest(BaseModel):
     job_id: str
-    method: str = "auto"                     # "auto", "smart", "rasterize"
+    method: str = "auto"                     # "auto", "smart", "rasterize", "merge_only"
     color_mode: str = "color"                # "color", "grayscale", "bw"
     quality: int = 75                        # 10..95
     dpi: int = 150                           # 36..300
@@ -81,10 +120,18 @@ class CompressRequest(BaseModel):
     preserve_toc: bool = True
 
 
+class QueueUpdateRequest(BaseModel):
+    file_ids: List[str]
+
+
 @app.post("/api/upload")
-async def upload_pdf(file: UploadFile = File(...)):
+async def upload_pdf(
+    file: UploadFile = File(...),
+    job_id: Optional[str] = Query(None),
+):
     """
-    Stream-upload a PDF file of any size to local disk and inspect its structure.
+    Stream-upload a PDF file of any size to local disk.
+    If `job_id` is provided and exists, appends the file to the existing job's merge queue.
     """
     cleanup_old_jobs()
 
@@ -92,15 +139,21 @@ async def upload_pdf(file: UploadFile = File(...)):
     if not filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Please upload a valid PDF file (.pdf)")
 
-    job_id = uuid.uuid4().hex[:12]
-    job_dir = STORAGE_DIR / job_id
-    job_dir.mkdir(parents=True, exist_ok=True)
+    existing_job = JOBS.get(job_id) if job_id else None
+    if existing_job:
+        jid = existing_job["job_id"]
+        job_dir = Path(existing_job["job_dir"])
+    else:
+        jid = uuid.uuid4().hex[:12]
+        job_dir = STORAGE_DIR / jid
+        job_dir.mkdir(parents=True, exist_ok=True)
 
-    input_path = job_dir / "original.pdf"
+    file_id = uuid.uuid4().hex[:8]
+    part_path = job_dir / f"part_{file_id}.pdf"
     total_bytes = 0
 
     try:
-        with open(input_path, "wb") as f:
+        with open(part_path, "wb") as f:
             while True:
                 chunk = await file.read(CHUNK_SIZE)
                 if not chunk:
@@ -108,45 +161,85 @@ async def upload_pdf(file: UploadFile = File(...)):
                 f.write(chunk)
                 total_bytes += len(chunk)
     except Exception as exc:
-        shutil.rmtree(job_dir, ignore_errors=True)
+        if not existing_job:
+            shutil.rmtree(job_dir, ignore_errors=True)
         raise HTTPException(status_code=500, detail=f"Failed to save uploaded file: {exc}")
 
     if total_bytes == 0:
-        shutil.rmtree(job_dir, ignore_errors=True)
+        part_path.unlink(missing_ok=True)
+        if not existing_job:
+            shutil.rmtree(job_dir, ignore_errors=True)
         raise HTTPException(status_code=400, detail="The uploaded file is empty")
 
     try:
-        info = await asyncio.to_thread(inspect_pdf, str(input_path))
+        info = await asyncio.to_thread(inspect_pdf, str(part_path))
     except Exception as exc:
-        shutil.rmtree(job_dir, ignore_errors=True)
+        part_path.unlink(missing_ok=True)
+        if not existing_job:
+            shutil.rmtree(job_dir, ignore_errors=True)
         raise HTTPException(status_code=400, detail=f"Failed to read PDF file: {exc}")
 
-    JOBS[job_id] = {
-        "job_id": job_id,
+    file_entry = {
+        "id": file_id,
         "filename": filename,
-        "job_dir": str(job_dir),
-        "input_path": str(input_path),
-        "output_path": None,
-        "original_size": total_bytes,
+        "path": str(part_path),
+        "size": total_bytes,
         "pages_count": info["pages_count"],
         "images_count": info["images_count"],
-        "created_at": time.time(),
     }
 
-    return {
-        "job_id": job_id,
-        "filename": filename,
-        "original_size": total_bytes,
-        "pages_count": info["pages_count"],
-        "images_count": info["images_count"],
-    }
+    if existing_job:
+        existing_job["files"].append(file_entry)
+        job = existing_job
+    else:
+        job = {
+            "job_id": jid,
+            "filename": filename,
+            "job_dir": str(job_dir),
+            "input_path": "",
+            "output_path": None,
+            "original_size": total_bytes,
+            "pages_count": info["pages_count"],
+            "images_count": info["images_count"],
+            "files": [file_entry],
+            "created_at": time.time(),
+        }
+        JOBS[jid] = job
+
+    await asyncio.to_thread(_rebuild_job_combined_pdf, job)
+    return _serialize_job_state(job)
+
+
+@app.post("/api/queue/{job_id}")
+async def update_job_queue(job_id: str, req: QueueUpdateRequest):
+    """Reorder or remove files in an active job's merge queue."""
+    job = JOBS.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    by_id = {f["id"]: f for f in job["files"]}
+    new_files = [by_id[fid] for fid in req.file_ids if fid in by_id]
+    if not new_files:
+        raise HTTPException(status_code=400, detail="At least one PDF file must remain in the queue")
+
+    # Clean up removed part files
+    kept_ids = {f["id"] for f in new_files}
+    for f in job["files"]:
+        if f["id"] not in kept_ids:
+            try:
+                os.remove(f["path"])
+            except OSError:
+                pass
+
+    job["files"] = new_files
+    await asyncio.to_thread(_rebuild_job_combined_pdf, job)
+    return _serialize_job_state(job)
 
 
 @app.post("/api/compress")
 async def compress_job(req: CompressRequest):
     """
-    Compress an already-uploaded PDF job with the specified settings.
-    Can be called repeatedly with different settings without re-uploading.
+    Compress or losslessly merge an already-uploaded PDF job.
     """
     job = JOBS.get(req.job_id)
     if not job or not os.path.exists(job["input_path"]):
@@ -154,8 +247,9 @@ async def compress_job(req: CompressRequest):
 
     output_path = os.path.join(job["job_dir"], "compressed.pdf")
 
+    valid_methods = ("auto", "smart", "rasterize", "merge_only")
     options = CompressionOptions(
-        method=req.method if req.method in ("auto", "smart", "rasterize") else "auto",
+        method=req.method if req.method in valid_methods else "auto",
         color_mode=req.color_mode if req.color_mode in ("color", "grayscale", "bw") else "color",
         quality=max(10, min(95, req.quality)),
         dpi=max(36, min(300, req.dpi)),
@@ -174,7 +268,7 @@ async def compress_job(req: CompressRequest):
             options,
         )
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"PDF compression failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"PDF processing failed: {exc}")
 
     job["output_path"] = output_path
     job["last_result"] = result.to_dict()
@@ -200,7 +294,7 @@ async def preview_page(
 
     target_pdf = job["input_path"] if variant == "original" else job.get("output_path")
     if not target_pdf or not os.path.exists(target_pdf):
-        raise HTTPException(status_code=404, detail="Compressed version is not generated yet")
+        raise HTTPException(status_code=404, detail="Processed version is not generated yet")
 
     try:
         png_bytes, total_pages = await asyncio.to_thread(
@@ -221,14 +315,15 @@ async def preview_page(
 
 @app.get("/api/download/{job_id}")
 async def download_compressed(job_id: str):
-    """Download the compressed PDF file."""
+    """Download the processed PDF file."""
     job = JOBS.get(job_id)
     if not job or not job.get("output_path") or not os.path.exists(job["output_path"]):
-        raise HTTPException(status_code=404, detail="Compressed file not found")
+        raise HTTPException(status_code=404, detail="Processed file not found")
 
     orig_name = job["filename"]
     stem = orig_name[:-4] if orig_name.lower().endswith(".pdf") else orig_name
-    download_name = f"{stem}_compressed.pdf"
+    suffix = "" if stem.endswith("_merged") else "_processed"
+    download_name = f"{stem}{suffix}.pdf"
     encoded_name = quote(download_name)
 
     return FileResponse(
@@ -254,4 +349,3 @@ async def delete_job(job_id: str):
 STATIC_DIR = Path(__file__).parent / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
-

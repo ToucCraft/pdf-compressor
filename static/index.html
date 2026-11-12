@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PDF Compressor Pro — Unlimited Local PDF Compression</title>
+  <title>PDF Compressor &amp; Merger Pro — Unlimited Local PDF Tool</title>
   <link rel="stylesheet" href="./style.css" />
   <!-- PDF.js & pdf-lib for 100% in-browser serverless execution (GitHub Pages compatible) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -23,11 +23,20 @@
           </svg>
         </div>
         <div>
-          <h1>PDF Compressor Pro</h1>
-          <p class="subtitle">Unlimited File Size • Target Size Solver • Color / Grayscale / B&amp;W</p>
+          <h1>PDF Compressor &amp; Merger Pro</h1>
+          <p class="subtitle">Unlimited File Size • Merge Multiple PDFs • Target Size Solver • Color / Grayscale / B&amp;W</p>
         </div>
       </div>
       <div class="badges">
+        <span class="badge">
+          <svg class="icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 3h5v5"></path>
+            <path d="M8 3H3v5"></path>
+            <path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"></path>
+            <path d="m15 9 6-6"></path>
+          </svg>
+          PDF Merger Included
+        </span>
         <span class="badge">
           <svg class="icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M18.178 8c5.096 0 5.096 8 0 8-5.095 0-7.133-8-12.739-8-4.585 0-4.585 8 0 8 5.606 0 7.644-8 12.74-8z"></path>
@@ -46,7 +55,8 @@
 
     <!-- Upload Dropzone -->
     <section id="uploadSection" class="card upload-card">
-      <input type="file" id="fileInput" accept=".pdf,application/pdf" hidden />
+      <input type="file" id="fileInput" accept=".pdf,application/pdf" multiple hidden />
+      <input type="file" id="addMoreFileInput" accept=".pdf,application/pdf" multiple hidden />
       <div id="dropzone" class="dropzone">
         <div class="dropzone-icon">
           <svg class="icon icon-xl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -55,14 +65,14 @@
             <line x1="12" y1="3" x2="12" y2="15"></line>
           </svg>
         </div>
-        <h2>Drop your PDF file here or click to browse</h2>
-        <p>Supports PDF files of any size (10 MB, 500 MB, 2 GB+) — processed directly on your device</p>
+        <h2>Drop one or multiple PDF files here, or click to browse</h2>
+        <p>Select multiple PDFs to merge them together, or a single PDF to compress — no size limit</p>
         <button type="button" class="btn btn-primary" id="selectFileBtn">
           <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
             <polyline points="14 2 14 8 20 8"></polyline>
           </svg>
-          Select PDF File
+          Select PDF File(s)
         </button>
       </div>
 
@@ -80,9 +90,9 @@
 
     <!-- Workspace (shown after file upload) -->
     <main id="workspaceSection" class="workspace hidden">
-      <!-- Left Column: File Info + Scrollable Compression Settings -->
+      <!-- Left Column: File Queue + Scrollable Compression Settings -->
       <div class="settings-column">
-        <!-- Active File Card -->
+        <!-- Active File / Merge Queue Card -->
         <div class="card file-summary-card">
           <div class="file-summary-header">
             <div class="file-title-wrap">
@@ -97,14 +107,25 @@
                 <p id="fileMetaLabel" class="file-meta">0 MB • 0 pages</p>
               </div>
             </div>
-            <button type="button" id="changeFileBtn" class="btn btn-ghost btn-sm" title="Select another PDF">
-              <svg class="icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="1 4 1 10 7 10"></polyline>
-                <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
-              </svg>
-              Change File
-            </button>
+            <div class="file-header-actions">
+              <button type="button" id="addPdfBtn" class="btn btn-primary btn-sm" title="Add another PDF to merge">
+                <svg class="icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                Add PDF
+              </button>
+              <button type="button" id="changeFileBtn" class="btn btn-ghost btn-icon" title="Clear and start over">
+                <svg class="icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="1 4 1 10 7 10"></polyline>
+                  <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                </svg>
+              </button>
+            </div>
           </div>
+
+          <!-- Reorderable Merge Queue List -->
+          <div id="fileQueueList" class="file-queue-list hidden"></div>
         </div>
 
         <!-- Settings Card (Fixed height with internal scroll area) -->
@@ -122,22 +143,22 @@
                 <line x1="9" y1="8" x2="15" y2="8"></line>
                 <line x1="17" y1="16" x2="23" y2="16"></line>
               </svg>
-              Compression Settings
+              Compression &amp; Merge Settings
             </h3>
           </div>
 
           <div class="settings-scroll-area">
-            <!-- 1. Target Size vs Manual Quality Tabs -->
+            <!-- 1. Mode Tabs: Target Size | Quality & DPI | Merge Only -->
             <div class="control-group">
-              <label class="group-label">Compression Mode</label>
-              <div class="segmented-control" id="sizingModeTabs">
+              <label class="group-label">Operation Mode</label>
+              <div class="segmented-control segmented-3" id="sizingModeTabs">
                 <button type="button" class="seg-btn active" data-mode="target">
                   <svg class="icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="10"></circle>
                     <circle cx="12" cy="12" r="6"></circle>
                     <circle cx="12" cy="12" r="2"></circle>
                   </svg>
-                  Target File Size
+                  Target Size
                 </button>
                 <button type="button" class="seg-btn" data-mode="preset">
                   <svg class="icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -146,6 +167,31 @@
                   </svg>
                   Quality &amp; DPI
                 </button>
+                <button type="button" class="seg-btn" data-mode="merge_only">
+                  <svg class="icon icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M16 3h5v5"></path>
+                    <path d="M8 3H3v5"></path>
+                    <path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"></path>
+                    <path d="m15 9 6-6"></path>
+                  </svg>
+                  Merge Only
+                </button>
+              </div>
+            </div>
+
+            <!-- Merge Only Info Panel -->
+            <div id="mergeOnlyPanel" class="sub-panel hidden">
+              <div class="merge-only-notice">
+                <svg class="icon icon-md merge-notice-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M16 3h5v5"></path>
+                  <path d="M8 3H3v5"></path>
+                  <path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"></path>
+                  <path d="m15 9 6-6"></path>
+                </svg>
+                <div>
+                  <strong>Lossless PDF Merge</strong>
+                  <p>Combines all queued PDF files in the exact order shown above without recompressing images. Preserves 100% of original resolution, vector graphics, and selectable text.</p>
+                </div>
               </div>
             </div>
 
@@ -226,60 +272,65 @@
               </div>
             </div>
 
+            <!-- Compression-specific options wrapper (hidden when Merge Only is active) -->
+            <div id="compressionSpecificControls">
+              <hr class="divider" />
+
+              <!-- 2. Color Mode Selection -->
+              <div class="control-group">
+                <label class="group-label">Color Mode</label>
+                <div class="color-mode-grid" id="colorModeGroup">
+                  <button type="button" class="color-card active" data-color="color">
+                    <span class="color-swatch swatch-color"></span>
+                    <div>
+                      <strong>Color (RGB)</strong>
+                      <small>Preserve original colors</small>
+                    </div>
+                  </button>
+                  <button type="button" class="color-card" data-color="grayscale">
+                    <span class="color-swatch swatch-gray"></span>
+                    <div>
+                      <strong>Grayscale</strong>
+                      <small>Smooth 8-bit gray tones</small>
+                    </div>
+                  </button>
+                  <button type="button" class="color-card" data-color="bw">
+                    <span class="color-swatch swatch-bw"></span>
+                    <div>
+                      <strong>Black &amp; White</strong>
+                      <small>High-contrast document scan</small>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              <!-- B&W Threshold Slider (only visible when B&W is chosen) -->
+              <div id="bwThresholdBox" class="slider-group bw-sub-box hidden">
+                <div class="slider-header">
+                  <label for="bwThresholdSlider">B&amp;W Contrast Threshold</label>
+                  <span id="bwThresholdLabel" class="val-pill">180</span>
+                </div>
+                <input type="range" id="bwThresholdSlider" min="80" max="235" value="180" />
+                <div class="slider-labels">
+                  <span>Lighter (less noise)</span>
+                  <span>Darker (bolder text)</span>
+                </div>
+              </div>
+
+              <hr class="divider" />
+
+              <!-- 3. Compression Method -->
+              <div class="control-group">
+                <label class="group-label" for="methodSelect">Processing Engine</label>
+                <select id="methodSelect" class="select-input">
+                  <option value="auto" selected>Auto (Smart compression + Target size solver)</option>
+                  <option value="smart">Smart Only (Keep selectable text &amp; vectors)</option>
+                  <option value="rasterize">Full Rasterize (Convert pages to compressed images)</option>
+                </select>
+              </div>
+            </div>
+
             <hr class="divider" />
-
-            <!-- 2. Color Mode Selection -->
-            <div class="control-group">
-              <label class="group-label">Color Mode</label>
-              <div class="color-mode-grid" id="colorModeGroup">
-                <button type="button" class="color-card active" data-color="color">
-                  <span class="color-swatch swatch-color"></span>
-                  <div>
-                    <strong>Color (RGB)</strong>
-                    <small>Preserve original colors</small>
-                  </div>
-                </button>
-                <button type="button" class="color-card" data-color="grayscale">
-                  <span class="color-swatch swatch-gray"></span>
-                  <div>
-                    <strong>Grayscale</strong>
-                    <small>Smooth 8-bit gray tones</small>
-                  </div>
-                </button>
-                <button type="button" class="color-card" data-color="bw">
-                  <span class="color-swatch swatch-bw"></span>
-                  <div>
-                    <strong>Black &amp; White</strong>
-                    <small>High-contrast document scan</small>
-                  </div>
-                </button>
-              </div>
-            </div>
-
-            <!-- B&W Threshold Slider (only visible when B&W is chosen) -->
-            <div id="bwThresholdBox" class="slider-group bw-sub-box hidden">
-              <div class="slider-header">
-                <label for="bwThresholdSlider">B&amp;W Contrast Threshold</label>
-                <span id="bwThresholdLabel" class="val-pill">180</span>
-              </div>
-              <input type="range" id="bwThresholdSlider" min="80" max="235" value="180" />
-              <div class="slider-labels">
-                <span>Lighter (less noise)</span>
-                <span>Darker (bolder text)</span>
-              </div>
-            </div>
-
-            <hr class="divider" />
-
-            <!-- 3. Compression Method -->
-            <div class="control-group">
-              <label class="group-label" for="methodSelect">Processing Engine</label>
-              <select id="methodSelect" class="select-input">
-                <option value="auto" selected>Auto (Smart compression + Target size solver)</option>
-                <option value="smart">Smart Only (Keep selectable text &amp; vectors)</option>
-                <option value="rasterize">Full Rasterize (Convert pages to compressed images)</option>
-              </select>
-            </div>
 
             <!-- 4. Extra Checkboxes -->
             <div class="checkbox-list">
@@ -304,7 +355,7 @@
               <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
               </svg>
-              <span>Compress PDF</span>
+              <span id="compressBtnLabel">Compress PDF</span>
             </button>
           </div>
         </div>
@@ -327,7 +378,7 @@
                 </svg>
               </div>
               <div class="size-block">
-                <span class="size-caption">Compressed</span>
+                <span class="size-caption">Output</span>
                 <strong id="newSizeStat" class="size-val new">2.1 MB</strong>
               </div>
               <div class="savings-pill" id="savingsBadge">-79%</div>
@@ -375,22 +426,22 @@
 
           <div class="preview-comparison-grid">
             <div class="preview-pane">
-              <div class="pane-label">Original</div>
+              <div class="pane-label" id="origPaneTitle">Original</div>
               <div class="img-container">
                 <img id="origPreviewImg" alt="Original page preview" />
               </div>
             </div>
             <div class="preview-pane">
-              <div class="pane-label" id="compressedPaneTitle">Compressed (click "Compress PDF")</div>
+              <div class="pane-label" id="compressedPaneTitle">Output (click action button)</div>
               <div class="img-container" id="compressedPreviewWrap">
                 <div id="previewPlaceholder" class="preview-placeholder">
                   <svg class="icon icon-lg muted-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                     <polyline points="14 2 14 8 20 8"></polyline>
                   </svg>
-                  <p>Click <strong>Compress PDF</strong> to preview and compare the output quality</p>
+                  <p>Click the action button on the left to preview and compare the output PDF</p>
                 </div>
-                <img id="compPreviewImg" class="hidden" alt="Compressed page preview" />
+                <img id="compPreviewImg" class="hidden" alt="Output page preview" />
               </div>
             </div>
           </div>

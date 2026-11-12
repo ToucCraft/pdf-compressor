@@ -11,7 +11,7 @@ from PIL import Image, ImageOps
 
 
 ColorMode = Literal["color", "grayscale", "bw"]
-CompressionMethod = Literal["smart", "rasterize", "auto"]
+CompressionMethod = Literal["smart", "rasterize", "auto", "merge_only"]
 
 
 @dataclass
@@ -360,6 +360,30 @@ def _solve_raster_params_for_target(
         doc.close()
 
 
+def merge_pdfs(input_paths: list[str], output_path: str) -> int:
+    """
+    Losslessly merge multiple PDF files in order into `output_path`.
+    Returns total pages count.
+    """
+    merged_doc = fitz.open()
+    try:
+        for path in input_paths:
+            src = fitz.open(path)
+            try:
+                merged_doc.insert_pdf(src)
+            finally:
+                src.close()
+        total_pages = len(merged_doc)
+        merged_doc.save(
+            output_path,
+            garbage=3,
+            deflate=True,
+        )
+        return total_pages
+    finally:
+        merged_doc.close()
+
+
 def compress_pdf(
     input_path: str,
     output_path: str,
@@ -368,7 +392,7 @@ def compress_pdf(
     """
     Main entry point to compress a PDF file according to `options`.
     Supports unlimited input size, color/grayscale/bw conversion,
-    smart vs rasterize modes, and exact target file size in KB.
+    smart vs rasterize modes, lossless merge_only, and exact target file size in KB.
     """
     t0 = time.time()
     original_size = os.path.getsize(input_path)
@@ -382,6 +406,34 @@ def compress_pdf(
     dpi_used = options.dpi
     method_used = options.method
     images_processed = 0
+
+    if options.method == "merge_only":
+        src_doc = fitz.open(input_path)
+        try:
+            if options.strip_metadata:
+                try:
+                    src_doc.set_metadata({})
+                    src_doc.del_xml_metadata()
+                except Exception:
+                    pass
+            src_doc.save(output_path, garbage=4, deflate=True, clean=True)
+        finally:
+            src_doc.close()
+        compressed_size = os.path.getsize(output_path)
+        elapsed_sec = round(time.time() - t0, 2)
+        return CompressionResult(
+            output_path=output_path,
+            original_size=original_size,
+            compressed_size=compressed_size,
+            pages_count=pages_count,
+            images_processed=0,
+            method_used="merge_only",
+            quality_used=100,
+            dpi_used=300,
+            color_mode="color",
+            elapsed_sec=elapsed_sec,
+            target_reached=True,
+        )
 
     if target_bytes and target_bytes > 0:
         # Target size mode: try to get under target_bytes with highest quality
